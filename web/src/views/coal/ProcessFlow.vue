@@ -3,6 +3,7 @@
     <CoalQuickBar
       title="工艺流程专项"
       subtitle="独立跟踪流程节点负荷、状态和告警，作为生产流程图的专项管理页。"
+      :status="quickStatus"
     />
 
     <section class="page-shell">
@@ -31,6 +32,48 @@
           <strong>{{ item.value }}</strong>
           <small>{{ item.note }}</small>
         </article>
+      </section>
+
+      <section class="section-panel">
+        <div class="panel-head">
+          <div>
+            <h2>流程图实时映射</h2>
+            <p>将 IOT 实时点位映射到关键节点，运行中为绿色，关注为橙色，告警为红色。</p>
+          </div>
+        </div>
+        <div
+          class="flow-map-wrap"
+          :class="{ dragging: flowDragging }"
+          @wheel.prevent="onFlowWheel"
+          @mousedown="onFlowDragStart"
+          @mousemove="onFlowDragMove"
+          @mouseup="onFlowDragEnd"
+          @mouseleave="onFlowDragEnd"
+        >
+          <div class="flow-map-tools">
+            <el-button size="small" @click="zoomFlow(0.1)">放大</el-button>
+            <el-button size="small" @click="zoomFlow(-0.1)">缩小</el-button>
+            <el-button size="small" @click="resetFlowTransform">重置</el-button>
+          </div>
+          <svg viewBox="0 0 920 260" class="flow-map" role="img" aria-label="工艺流程图">
+            <g :transform="flowTransform">
+            <defs>
+              <linearGradient id="pipeLine" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#2d5d82" />
+                <stop offset="100%" stop-color="#3f86b8" />
+              </linearGradient>
+            </defs>
+
+            <line x1="90" y1="130" x2="830" y2="130" stroke="url(#pipeLine)" stroke-width="8" stroke-linecap="round" />
+
+            <g v-for="node in processNodes" :key="node.key" class="flow-node" @click="focusNode(node.key)">
+              <circle :cx="node.cx" :cy="130" r="22" :class="['node-dot', `node-dot--${node.state}`]" />
+              <text :x="node.cx" y="136" text-anchor="middle" class="node-value">{{ node.value }}</text>
+              <text :x="node.cx" y="176" text-anchor="middle" class="node-name">{{ node.name }}</text>
+            </g>
+            </g>
+          </svg>
+        </div>
       </section>
 
       <section class="section-panel">
@@ -127,6 +170,7 @@ import CoalQuickBar from '../../components/coal/CoalQuickBar.vue'
 import { echarts } from '../../utils/echarts'
 import { exportRowsToCsv, printRowsAsTable } from '../../utils/report-export'
 import { listProcessFlow, type ProcessFlowDto } from '../../api/coal-business'
+import { useIotStore } from '../../stores/iot'
 
 const filterStatus = ref('')
 const rows = ref<ProcessFlowDto[]>([])
@@ -143,6 +187,79 @@ const adjustmentForm = ref({
 const chartEl = ref<HTMLElement | null>(null)
 let chart: any = null
 let refreshTimer = 0
+const iotStore = useIotStore()
+const flowScale = ref(1)
+const flowOffsetX = ref(0)
+const flowOffsetY = ref(0)
+const flowDragging = ref(false)
+const flowDragStartX = ref(0)
+const flowDragStartY = ref(0)
+const flowTransform = computed(
+  () => `translate(${flowOffsetX.value}, ${flowOffsetY.value}) scale(${flowScale.value})`,
+)
+
+type ProcessNodeConfig = {
+  key: string
+  name: string
+  tagCode: string
+  cx: number
+  warning: number
+  critical: number
+}
+
+const processNodeConfigs: ProcessNodeConfig[] = [
+  { key: 'feed', name: '给料', tagCode: 'coal.feed.load', cx: 130, warning: 85, critical: 92 },
+  { key: 'crusher', name: '破碎', tagCode: 'coal.crusher.load', cx: 280, warning: 85, critical: 92 },
+  { key: 'screen', name: '筛分', tagCode: 'coal.screen.load', cx: 430, warning: 80, critical: 90 },
+  { key: 'separator', name: '分选', tagCode: 'coal.separator.load', cx: 580, warning: 82, critical: 90 },
+  { key: 'dewater', name: '脱水', tagCode: 'coal.dewater.load', cx: 730, warning: 80, critical: 88 },
+]
+
+const parseLoadValue = (load: string) => {
+  const matched = load.match(/-?\d+(\.\d+)?/)
+  return matched ? Number(matched[0]) : 0
+}
+
+const fallbackLoadMap = computed(() => {
+  const map: Record<string, number> = {
+    feed: 72,
+    crusher: 76,
+    screen: 70,
+    separator: 74,
+    dewater: 68,
+  }
+  rows.value.forEach((row) => {
+    const key = processNodeConfigs.find((node) => row.nodeName.includes(node.name))?.key
+    if (key) map[key] = parseLoadValue(row.load)
+  })
+  return map
+})
+
+const processNodes = computed(() =>
+  processNodeConfigs.map((node) => {
+    const live = iotStore.getTagValue(node.tagCode)
+    const numeric = typeof live?.value === 'number' ? live.value : fallbackLoadMap.value[node.key]
+    const rounded = Number.isFinite(numeric) ? Number(numeric).toFixed(0) : '--'
+    let state: 'running' | 'attention' | 'alarm' = 'running'
+    if (Number(rounded) >= node.critical) state = 'alarm'
+    else if (Number(rounded) >= node.warning) state = 'attention'
+    return {
+      key: node.key,
+      name: node.name,
+      value: `${rounded}%`,
+      state,
+      cx: node.cx,
+    }
+  }),
+)
+
+const quickStatus = computed(() => {
+  const hasAlarm = processNodes.value.some((node) => node.state === 'alarm')
+  if (hasAlarm) return { text: '流程告警', type: 'stopped' as const }
+  const hasAttention = processNodes.value.some((node) => node.state === 'attention')
+  if (hasAttention) return { text: '流程关注', type: 'idle' as const }
+  return { text: '流程运行中', type: 'running' as const }
+})
 
 const fallbackRows: ProcessFlowDto[] = [
   { nodeName: '原煤仓给料', section: '入洗段', status: '正常', load: '71%', alarm: '无', suggestion: '维持当前给料频率', ticketNo: 'GYGD-20260415-001', deadline: '2026-04-15 10:30', closureStatus: '已闭环', reviewConclusion: '运行参数连续 2 小时稳定', updateTime: '2026-04-15 08:20' },
@@ -243,6 +360,49 @@ const openDetail = (row: ProcessFlowDto) => {
   detailVisible.value = true
 }
 
+const focusNode = (key: string) => {
+  const matched = rows.value.find((row) => {
+    const node = processNodeConfigs.find((item) => item.key === key)
+    return node ? row.nodeName.includes(node.name) : false
+  })
+  if (matched) openDetail(matched)
+}
+
+const onFlowWheel = (event: WheelEvent) => {
+  const delta = event.deltaY < 0 ? 0.08 : -0.08
+  zoomFlow(delta)
+}
+
+const zoomFlow = (delta: number) => {
+  flowScale.value = Math.min(2.2, Math.max(0.7, Number((flowScale.value + delta).toFixed(2))))
+}
+
+const resetFlowTransform = () => {
+  flowScale.value = 1
+  flowOffsetX.value = 0
+  flowOffsetY.value = 0
+}
+
+const onFlowDragStart = (event: MouseEvent) => {
+  const target = event.target as HTMLElement
+  if (target.closest('.flow-map-tools')) return
+  flowDragging.value = true
+  flowDragStartX.value = event.clientX
+  flowDragStartY.value = event.clientY
+}
+
+const onFlowDragMove = (event: MouseEvent) => {
+  if (!flowDragging.value) return
+  flowOffsetX.value += event.clientX - flowDragStartX.value
+  flowOffsetY.value += event.clientY - flowDragStartY.value
+  flowDragStartX.value = event.clientX
+  flowDragStartY.value = event.clientY
+}
+
+const onFlowDragEnd = () => {
+  flowDragging.value = false
+}
+
 const updateRow = (target: ProcessFlowDto) => {
   rows.value = rows.value.map((item) => (item.ticketNo === target.ticketNo ? { ...target } : item))
   selectedRow.value = { ...target }
@@ -284,11 +444,13 @@ const createReviewTask = () => {
 
 const handleResize = () => chart?.resize()
 onMounted(async () => {
+  iotStore.subscribe({ pageKey: 'process-flow', intervalMs: 5000 })
   await loadRows()
   refreshTimer = window.setInterval(() => loadRows(), 30000)
   window.addEventListener('resize', handleResize)
 })
 onUnmounted(() => {
+  iotStore.unsubscribe('process-flow')
   clearInterval(refreshTimer)
   chart?.dispose()
   window.removeEventListener('resize', handleResize)
@@ -315,6 +477,17 @@ onUnmounted(() => {
 .panel-head h2{margin:0;font-size:24px}
 .panel-head p{margin:8px 0 0;color:#8fa8bc}
 .chart-box{height:320px}
+.flow-map-wrap{padding:8px 6px 2px;position:relative;overflow:hidden;border-radius:12px;cursor:grab}
+.flow-map-wrap.dragging{cursor:grabbing}
+.flow-map{width:100%;height:240px}
+.flow-map-tools{position:absolute;right:8px;top:8px;display:flex;gap:6px;z-index:2}
+.node-dot{stroke:rgba(255,255,255,.2);stroke-width:2;cursor:pointer;transition:.2s ease}
+.node-dot--running{fill:#1fcb9a;filter:drop-shadow(0 0 8px rgba(31,203,154,.45))}
+.node-dot--attention{fill:#ffb547;filter:drop-shadow(0 0 10px rgba(255,181,71,.55))}
+.node-dot--alarm{fill:#ff6b6b;filter:drop-shadow(0 0 12px rgba(255,107,107,.58))}
+.flow-node:hover .node-dot{transform:scale(1.06);transform-origin:center}
+.node-value{font-size:12px;fill:#042439;font-weight:700;pointer-events:none}
+.node-name{font-size:12px;fill:#a7bfd4;pointer-events:none}
 .pager-wrap{display:flex;justify-content:flex-end;margin-top:12px}
 .drawer-actions{display:flex;gap:10px;margin-top:16px}
 @media (max-width: 1200px){.stats-grid{grid-template-columns:repeat(2,1fr)}}

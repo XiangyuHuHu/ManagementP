@@ -2,6 +2,13 @@ export type ModuleMetric = {
   label: string
   value: string
   note: string
+  unit?: string
+  threshold?: {
+    warning?: number
+    critical?: number
+    direction?: 'higher' | 'lower'
+  }
+  refreshRate?: number
 }
 
 export type ModuleRow = Record<string, string>
@@ -19,6 +26,7 @@ export type ModuleConfig = {
   tableTitle: string
   columns: { key: string; label: string }[]
   rows: ModuleRow[]
+  refreshRate?: number
 }
 
 export const moduleConfigs: Record<string, ModuleConfig> = {
@@ -30,8 +38,8 @@ export const moduleConfigs: Record<string, ModuleConfig> = {
     scenario: '班组技术检查 / 工艺稽核 / 实验记录联动',
     metrics: [
       { label: '当日检查项', value: '28 项', note: '已完成 23 项' },
-      { label: '异常整改', value: '5 条', note: '2 条待复核' },
-      { label: '工艺偏差', value: '1.8%', note: '较昨日下降' },
+      { label: '异常整改', value: '5', unit: '条', note: '2 条待复核', threshold: { warning: 4, critical: 8, direction: 'higher' }, refreshRate: 30 },
+      { label: '工艺偏差', value: '1.8', unit: '%', note: '较昨日下降', threshold: { warning: 2.5, critical: 3.5, direction: 'higher' }, refreshRate: 30 },
     ],
     highlights: ['生产记录检查', '实验记录归档', '工艺制度执行', '材料消耗复核'],
     chartTitle: '检查项完成率',
@@ -53,6 +61,7 @@ export const moduleConfigs: Record<string, ModuleConfig> = {
       { name: '浮选药剂用量复核', owner: '技术员', status: '待复核', deadline: '今日 20:00' },
       { name: '班组实验记录抽查', owner: '质检员', status: '已完成', deadline: '已归档' },
     ],
+    refreshRate: 30,
   },
   'material-tracking': {
     key: 'material-tracking',

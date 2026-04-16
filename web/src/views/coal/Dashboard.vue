@@ -86,18 +86,46 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { echarts } from '../../utils/echarts'
+import { useIotStore } from '../../stores/iot'
 
 const router = useRouter()
+const iotStore = useIotStore()
 
-const kpis = [
-  { label: '今日入洗原煤', value: '2,900 吨', note: '较昨日 +3.6%' },
-  { label: '今日精煤产量', value: '2,180 吨', note: '完成率 77.8%' },
-  { label: '综合单耗', value: '12.1', note: '按吨煤折算' },
-  { label: '待处理告警', value: '2 项', note: '设备与能耗联合告警' },
-]
+const getRealtimeValue = (tagCode: string, fallback: number, digits = 1) => {
+  const live = iotStore.getTagValue(tagCode)
+  if (!live || typeof live.value !== 'number') return fallback.toFixed(digits)
+  return live.value.toFixed(digits)
+}
+
+const abnormalCount = computed(
+  () => Object.values(iotStore.realtimeMap).filter((item) => item.quality !== 'GOOD').length,
+)
+
+const kpis = computed(() => [
+  {
+    label: '今日入洗原煤',
+    value: `${getRealtimeValue('coal.feed.daily', 2900, 0)} 吨`,
+    note: '来自 IOT 汇总点位',
+  },
+  {
+    label: '今日精煤产量',
+    value: `${getRealtimeValue('coal.product.daily', 2180, 0)} 吨`,
+    note: '按实时点位估算',
+  },
+  {
+    label: '综合单耗',
+    value: getRealtimeValue('coal.energy.unit', 12.1, 1),
+    note: '按吨煤折算',
+  },
+  {
+    label: '待处理告警',
+    value: `${abnormalCount.value || 2} 项`,
+    note: '质量异常点位统计',
+  },
+])
 
 const dispatchRows = [
   { time: '2025-01-13', content: '夜班正常交接，主洗系统运行稳定。', reporter: '刘丽媛', receiver: '杨慧洁' },
@@ -105,11 +133,16 @@ const dispatchRows = [
   { time: '2025-01-12', content: '早班入洗原煤波动，已调整密度。', reporter: '杨慧洁', receiver: '张申立' },
 ]
 
-const envRows = [
-  { name: '1号原煤仓', type: '温度', value: '26.4°C', status: '正常' },
-  { name: '1号产品仓', type: '湿度', value: '63%', status: '正常' },
-  { name: '3号产品仓', type: '粉尘', value: '0.12 mg/m³', status: '关注' },
-]
+const envRows = computed(() => {
+  const temp = iotStore.getTagValue('coal.env.raw.temperature')
+  const humidity = iotStore.getTagValue('coal.env.product.humidity')
+  const dust = iotStore.getTagValue('coal.env.product.dust')
+  return [
+    { name: '1号原煤仓', type: '温度', value: `${temp?.value?.toFixed?.(1) || '26.4'}°C`, status: temp?.quality === 'GOOD' ? '正常' : '关注' },
+    { name: '1号产品仓', type: '湿度', value: `${humidity?.value?.toFixed?.(0) || '63'}%`, status: humidity?.quality === 'GOOD' ? '正常' : '关注' },
+    { name: '3号产品仓', type: '粉尘', value: `${dust?.value?.toFixed?.(2) || '0.12'} mg/m³`, status: dust?.quality === 'GOOD' ? '正常' : '关注' },
+  ]
+})
 
 const trendChartRef = ref<HTMLElement | null>(null)
 const stockChartRef = ref<HTMLElement | null>(null)
@@ -194,11 +227,13 @@ const renderCharts = () => {
 }
 
 onMounted(() => {
+  iotStore.subscribe({ pageKey: 'coal-dashboard', intervalMs: 5000 })
   renderCharts()
   window.addEventListener('resize', renderCharts)
 })
 
 onBeforeUnmount(() => {
+  iotStore.unsubscribe('coal-dashboard')
   window.removeEventListener('resize', renderCharts)
   trendChart?.dispose()
   stockChart?.dispose()

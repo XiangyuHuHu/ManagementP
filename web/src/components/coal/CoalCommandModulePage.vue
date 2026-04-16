@@ -13,10 +13,16 @@
     </header>
 
     <section class="metric-grid">
-      <article v-for="item in config.metrics" :key="item.label" class="metric-card">
+      <article
+        v-for="item in config.metrics"
+        :key="item.label"
+        class="metric-card"
+        :class="metricLevelClass(item)"
+      >
         <span>{{ item.label }}</span>
-        <strong>{{ item.value }}</strong>
+        <strong>{{ item.value }}<em v-if="item.unit">{{ item.unit }}</em></strong>
         <small>{{ item.note }}</small>
+        <p v-if="item.refreshRate || config.refreshRate" class="metric-refresh">刷新频率 {{ item.refreshRate || config.refreshRate }}s</p>
       </article>
     </section>
 
@@ -83,13 +89,33 @@
 
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
-import type { ModuleConfig } from '../../views/coal/moduleConfigs'
+import type { ModuleConfig, ModuleMetric } from '../../views/coal/moduleConfigs'
 
 defineProps<{
   config: ModuleConfig
 }>()
 
 const notify = (message: string) => ElMessage.success(message)
+
+const extractNumber = (value: string) => {
+  const matched = value.match(/-?\d+(\.\d+)?/)
+  return matched ? Number(matched[0]) : Number.NaN
+}
+
+const metricLevelClass = (metric: ModuleMetric) => {
+  if (!metric.threshold) return ''
+  const numeric = extractNumber(metric.value)
+  if (Number.isNaN(numeric)) return ''
+  const { warning, critical, direction = 'higher' } = metric.threshold
+  if (direction === 'higher') {
+    if (critical !== undefined && numeric >= critical) return 'metric-card--critical'
+    if (warning !== undefined && numeric >= warning) return 'metric-card--warning'
+    return ''
+  }
+  if (critical !== undefined && numeric <= critical) return 'metric-card--critical'
+  if (warning !== undefined && numeric <= warning) return 'metric-card--warning'
+  return ''
+}
 </script>
 
 <style scoped>
@@ -201,10 +227,41 @@ const notify = (message: string) => ElMessage.success(message)
   font-size: 36px;
 }
 
+.metric-card strong em {
+  margin-left: 6px;
+  font-size: 16px;
+  font-style: normal;
+  color: rgba(227, 239, 250, 0.76);
+}
+
 .metric-card small {
   display: block;
   margin-top: 8px;
   color: #1ce7ba;
+}
+
+.metric-refresh {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: rgba(163, 196, 225, 0.88);
+}
+
+.metric-card--warning {
+  border-color: rgba(255, 181, 71, 0.5);
+  box-shadow: 0 16px 36px rgba(255, 181, 71, 0.12);
+}
+
+.metric-card--warning small {
+  color: #ffb547;
+}
+
+.metric-card--critical {
+  border-color: rgba(255, 107, 107, 0.5);
+  box-shadow: 0 16px 36px rgba(255, 107, 107, 0.12);
+}
+
+.metric-card--critical small {
+  color: #ff8f8f;
 }
 
 .main-grid {
