@@ -1,0 +1,29 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5432/coal_platform
+    driver-class-name: org.postgresql.Driver
+    username: postgres
+    password: postgres
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+platform:
+  iot:
+    provider: kepserver
+    fallback-to-mock: true
+    kepserver:
+      enabled: true
+      endpoint: opc.tcp://127.0.0.1:49320
+      username:
+      password:
+      source-type: KEPSERVER
+      channel-prefix: Channel1
+      timeout-ms: 5000
+      subscription-interval-ms: 1000
+      reconnect-delay-ms: 5000
+      max-reconnect-attempts: 0
+      batch-write-size: 500
+      batch-write-interval-ms: 5000

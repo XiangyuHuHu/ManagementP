@@ -1,0 +1,27 @@
+<!--
+  WinSW 服务配置 — 将 Spring Boot JAR 注册为 Windows 服务
+  使用方法:
+  1. 下载 WinSW: https://github.com/winsw/winsw/releases（选 WinSW-x64.exe）
+  2. 将 WinSW-x64.exe 重命名为 coal-platform-service.exe
+  3. 将本文件和 coal-platform-service.exe 放在同一目录
+  4. 管理员命令行执行: coal-platform-service.exe install
+  5. 启动服务: coal-platform-service.exe start
+  6. 停止服务: coal-platform-service.exe stop
+  7. 卸载服务: coal-platform-service.exe uninstall
+-->
+<service>
+  <id>coal-platform</id>
+  <name>煤炭管控平台</name>
+  <description>煤炭智能管控平台后端服务（Spring Boot + OPC-UA）</description>
+  <executable>java</executable>
+  <arguments>-Xms512m -Xmx1024m -jar D:\platform\server.jar --spring.profiles.active=prod</arguments>
+  <workingdirectory>D:\platform</workingdirectory>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  <onfailure action="restart" delay="10 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <startmode>Automatic</startmode>
+  <depend>postgresql-x64-15</depend>
+</service>

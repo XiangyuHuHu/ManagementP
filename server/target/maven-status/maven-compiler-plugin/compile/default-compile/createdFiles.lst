@@ -1,0 +1,11 @@
+com/example/platform/repository/IotRealtimeCustomRepositoryImpl.class
+com/example/platform/opcua/DataChangeHandler.class
+com/example/platform/config/WebSocketConfig.class
+com/example/platform/opcua/OpcUaClientManager.class
+com/example/platform/repository/IotHistoryRepository.class
+com/example/platform/entity/IotRealtimeEntity.class
+com/example/platform/entity/IotHistoryEntity.class
+com/example/platform/opcua/IotWebSocketPusher.class
+com/example/platform/repository/IotRealtimeRepository.class
+com/example/platform/opcua/OpcUaBootstrap.class
+com/example/platform/repository/IotRealtimeCustomRepository.class
